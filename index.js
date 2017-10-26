@@ -11,18 +11,53 @@ app.get("/", function(req, res) {
 	res.sendFile(__dirname + "/index.html");
 });
 
+var clientsOnline = [];
 io.on("connection", function(socket){
-	console.log("A user connected");
-	socket.broadcast.emit("user connect", "A user connected");
-	socket.on("chat message", function(msg) {
-		console.log("message: " + msg);
-		// io.emit("chat message", msg);
-		socket.broadcast.emit("chat message", msg);
+
+	var userName;
+	socket.on("init", function(name) { // when user enters name this is sent to server
+		userName = name;
+		console.log(userName + " connected");
+
+		var valid = 1;
+		if(clientsOnline.indexOf(name) > -1) {
+			valid = 0;
+			console.log(name + " not a valid name- already taken");
+		}else {
+			socket.broadcast.emit("user connect", name); // send to all clients except this one
+			clientsOnline.push(name);
+			console.log(clientsOnline.length + " clients connected");
+
+			io.emit("update online", JSON.stringify(clientsOnline)); // send to all clients (including this one) - updates the online list
+		}
+		socket.emit("name taken", valid); // send to only the current client - to say whether the chosen name is valid or not
+
 	});
 
+	socket.on("chat message", function(data) {
+		console.log("Message data: " + data);
+		// io.emit("chat message", msg);
+		socket.broadcast.emit("chat message", data);
+	});
+
+	socket.on("typing", function(person) {
+		socket.broadcast.emit("typing", person);
+	});
+
+	socket.on("stopTyping", function(person) {
+		socket.broadcast.emit("stopTyping", person);
+	});
 	socket.on("disconnect", function() {
-		console.log("user disconnected");
-		socket.broadcast.emit("user disconnect", "A user disconnected");
+		console.log(userName + " disconnected");
+		var index = clientsOnline.indexOf(userName);
+
+		if(index > -1) {
+			clientsOnline.splice(index, 1);
+		}
+
+		console.log(clientsOnline.length + " clients connected");
+		io.emit("update online", JSON.stringify(clientsOnline));
+		socket.broadcast.emit("user disconnect", userName);
 	});
 });
 

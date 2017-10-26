@@ -12,11 +12,57 @@
 			#messages { list-style-type: none; margin: 0; padding: 0; }
 			#messages li { padding: 5px 10px; }
 			#messages li:nth-child(odd) { background: #eee; }
+
+			.typing {
+				font-style: italic;
+			}
+
+			#wrapper {
+				width: 100%;
+			}
+
+			#online {
+				position: absolute;
+				top: 0;
+				left: 0;
+				bottom: 0;
+				width: 120px;
+				background-color: #454955;
+				color: white;
+				text-align: center;
+			}
+
+			#online-list {
+				/*text-align: left;*/
+				margin-top: 10px;
+			}
+
+			#messages-wrap {
+				position: relative;
+				left: 120px;
+			}
+
+			#you {
+				color: white;
+			    background-color: green;
+			    width: 100%;
+			    padding: 4px;
+			    margin-bottom: 10px;
+			}
 		  </style>
 	</head>
 
 	<body>
-		<ul id="messages"></ul>
+
+		<div id="wrapper">
+			<div id="online">
+				<h4>Online</h4>
+				<ul id="online-list"></ul>
+			</div>
+			<div id="messages-wrap">
+				<ul id="messages"></ul>
+			</div>
+		</div>
 		<form action="">
 			<input id="m" autocomplete="off"/><button>Send</button>
 		</form>
@@ -26,25 +72,97 @@
 		<script>
 			$(function() {
 				var socket = io(); // don't pass any url to io() as it defaults to trying to connect to the host that serves the page.
+				var name;
+
+
+				function getValidName() {
+					var valid = false;
+					while(!valid) {
+						name = prompt("Enter a nickname", "Anonymous");
+						if(name != null) {
+							socket.emit("init", name);
+							valid = true;
+						}
+					}
+				}
+
+				getValidName();
+
+				socket.on("name taken", function(valid) {
+					if(!valid) {
+						alert("This name is taken! Please choose another");
+						getValidName();
+					}
+				});
 
 				$("form").submit(function() {
-					socket.emit("chat message", $("#m").val());
+					var message = {
+						name: name,
+						message: $("#m").val()
+					};
+					socket.emit("chat message", JSON.stringify(message));
 					$("#messages").append($("<li>").text($("#m").val()));
 					$("#m").val("");
 					return false;
 				});
 
-				socket.on("chat message", function(msg) {
-					$("#messages").append($("<li>").text(msg));
+
+				var typing = false;
+				$("#m").keydown(function() {
+					socket.emit("typing", name);
+					typing = true;
 				});
 
-				socket.on("user connect", function(msg) {
-					$("#messages").append($("<li style='color: green;'>").text(msg));
+				$("#m").keyup(function() {
+					typing = false;
+
+					setTimeout(stopTyping, 2000);
 				});
 
-				socket.on("user disconnect", function(msg) {
-					$("#messages").append($("<li style='color: red;'>").text(msg));
+				function stopTyping() {
+					if(!typing) {
+						socket.emit("stopTyping", name);
+					}
+				}
+
+				socket.on("chat message", function(data) {
+					var msgData = JSON.parse(data);
+					console.log("Data retrieved: " + data);
+					$("#messages li.type-" + msgData.name).remove();
+					$("#messages").append($("<li>").text(msgData.name + ": " + msgData.message));
 				});
+
+				socket.on("typing", function(person) {
+					if($("#messages li.type-" + person).length == 0) {
+						$("#messages").append($("<li class='type-" + person + " typing'>").text(person + " is typing..."));
+					}
+				});
+
+				socket.on("stopTyping", function(person) {
+					$("#messages li.type-" + person).remove();
+				});
+
+				socket.on("user connect", function(person) {
+					$("#messages").append($("<li style='color: green;'>").text(person + " connected"));
+					$("#online-list").append($("<li>").text(person));
+				});
+
+				socket.on("user disconnect", function(person) {
+					$("#messages").append($("<li style='color: red;'>").text(person + " disconnected"));
+					$("#online-list li").filter(function() {
+						return $(this).text() == person;
+					}).remove();
+				});
+
+				socket.on("update online", function(online) {
+					var usersOnline = JSON.parse(online);
+					usersOnline.splice(usersOnline.indexOf(name), 1);
+					$("#online-list").empty();
+					$("#online-list").append($("<li id='you'>").text(name));
+					for(var i = 0; i < usersOnline.length; i++) {
+						$("#online-list").append($("<li>").text(usersOnline[i]));
+					}
+				})
 			});
 
 
